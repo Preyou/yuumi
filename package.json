@@ -1,0 +1,25 @@
+{
+  "name": "@yuumi/yuumi",
+  "type": "module",
+  "private": true,
+  "module": "index.ts",
+  "workspaces": [
+    "packages/**"
+  ],
+  "scripts": {
+    "dev:server": "bun run --filter @yuumi/server dev",
+    "dev:web": "bun run --filter @yuumi/web dev",
+    "dev": "bun-tasks dev:server ::: dev:web"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^6.7.3",
+    "bun-tasks": "^0.1.2",
+    "bun-types": "latest",
+    "eslint": "^9.39.2",
+    "eslint-plugin-format": "^1.1.0",
+    "jiti": "^2.6.1"
+  }
+}
