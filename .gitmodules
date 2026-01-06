@@ -1,0 +1,6 @@
+[submodule "packages/server"]
+	path = packages/server
+	url = git@github.com:Preyou/yuumi-server.git
+[submodule "packages/web"]
+	path = packages/web
+	url = git@github.com:Preyou/yuumi-web.git
