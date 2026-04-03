@@ -18,8 +18,8 @@ Scope: All code changes in root and `packages/*`.
 
 ## Checks
 - 当前仓库建议的 package 级检查：
-  - `@yuumi/web`: `bun run --filter @yuumi/web type-check`、`bun run --filter @yuumi/web build`
+  - `@yuumi/web`: `bun run --filter @yuumi/web type-check`
   - `@yuumi/server`: 执行能反映改动行为的包内验证（测试或针对性运行时 smoke check）。
 - 触及共享契约/配置时建议的跨包检查：
-  - `bun run --filter @yuumi/web build`
+  - `bun run --filter @yuumi/web type-check`
   - 以及与受影响 API 行为对应的 server 验证。
