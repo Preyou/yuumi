@@ -7,7 +7,9 @@
 - `rules/20-monorepo-boundary.md`
 - `rules/21-package-isolation.md`
 - `rules/22-workspace-deps.md`
+- `rules/23-ai-workspace-independence.md`
 - `rules/30-change-validation.md`
+- `rules/40-workspace-memory.md`
 
 ## Skills
-- 预留给任务级工作流，放置在 `skills/*`。
+- `skills/workspace-memory/SKILL.md`：允许 AI 在工作目录根下自主管理 `.memory/` 中间记忆。

@@ -20,4 +20,9 @@
   "i18n-ally.localesPaths": [
     "packages/web/src/locales"
   ],
+  "tailwindCSS.classFunctions": [
+    "cn",
+    "$cn",
+    "cva"
+  ]
 }

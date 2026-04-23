@@ -1,0 +1,10 @@
+developer_instructions = """
+Before making any code changes:
+1) Infer target files/directories from the user request; if unknown, use cwd.
+2) For each target path, walk upward to find the nearest `.ai/INDEX.md`.
+3) Load `.ai` rules nearest-first (nearest path has highest precedence).
+4) If multiple target paths exist, merge rule context using nearest-first precedence.
+5) If edit scope moves to a different subtree, repeat discovery.
+6) In the first progress update, explicitly report which `.ai` index/rules were loaded.
+"""
+
