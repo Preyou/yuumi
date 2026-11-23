@@ -1,0 +1,42 @@
+---
+schema_version: 1
+document_type: overall-design
+id: OD-001
+title: 前后端联合模板
+status: 已规划
+relations:
+  detailed_design:
+    - id: FST-001
+      path: ../detailed-design/fst-001.md
+---
+
+# OD-001 前后端联合模板
+
+## 目标
+
+组合独立前端与后端模板，提供一致的初始化、开发、验证和项目创建流程，使开发者能够得到自己的完整应用。
+
+## 产品边界
+
+服务应用开发者和公共能力维护者。个人项目独立演进，组织来源保持原样。源业务的数据与生产配置不作为模板内容。
+
+## 模块与能力
+
+| 能力           | 状态   | 详细设计                                 |
+| -------------- | ------ | ---------------------------------------- |
+| 前后端联合模板 | 已规划 | [FST-001](../detailed-design/fst-001.md) |
+
+```mermaid
+flowchart LR
+  Developer[应用开发者] --> Template[通用开发基础]
+  Maintainer[维护者] --> Template
+  Template --> App[独立业务应用]
+```
+
+## 当前范围之外
+
+不交付 Storyworld 的角色、剧本、AI 模型管理或对象存储业务。历史版本兼容与 shadcn 上游一致性不形成产品承诺。
+
+## 废弃说明
+
+不适用，本文件描述新项目的有效目标。

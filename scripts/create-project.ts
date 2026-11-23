@@ -1,0 +1,44 @@
+import { cp, lstat, mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+
+const sourceRoot = resolve(import.meta.dir, '..')
+const argument = Bun.argv[2]
+if (!argument) { throw new Error('Usage: bun run create -- <new-directory>') }
+const destination = resolve(argument)
+try {
+  await lstat(destination)
+  throw new Error('Target directory already exists')
+}
+catch (error) {
+  if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) { throw error }
+}
+await mkdir(dirname(destination), { recursive: true })
+const stage = await mkdtemp(resolve(dirname(destination), '.yuumi-create-'))
+async function run(command: string[], cwd: string) {
+  const child = Bun.spawn(command, { cwd, stderr: 'pipe', stdout: 'pipe' })
+  const [output, error, status] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
+  if (status !== 0) { throw new Error(error || command.join(' ')) }
+  return output
+}
+async function copyTracked(repository: string, target: string) {
+  const files = (await run(['git', 'ls-files', '-z'], repository)).split('\0').filter(Boolean)
+  for (const file of files) {
+    if (file === '.gitmodules' || file.split('/').some(part => ['.git', 'node_modules', 'dist', '.memory', '.migration'].includes(part))) { continue }
+    const basename = file.split('/').at(-1)!
+    if ((basename.startsWith('.env') && basename !== '.env.example' && !(repository.endsWith('/packages/web') && file === 'env/.env')) || basename.endsWith('.local')) { continue }
+    const source = resolve(repository, file)
+    const stat = await lstat(source)
+    if (!stat.isFile()) { continue }
+    await mkdir(dirname(resolve(target, file)), { recursive: true })
+    await cp(source, resolve(target, file))
+  }
+}
+try {
+  await copyTracked(sourceRoot, stage)
+  for (const name of ['server', 'web']) { await copyTracked(resolve(sourceRoot, 'packages', name), resolve(stage, 'packages', name)) }
+  await run(['git', 'init', '-b', 'main'], stage)
+  await mkdir(destination)
+  await rename(stage, destination)
+  console.info(`Created ${destination}. Run bun install and bun run setup there.`)
+}
+catch (error) { await rm(stage, { force: true, recursive: true }); throw error }

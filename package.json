@@ -1,29 +1,29 @@
 {
-  "name": "@yuumi/yuumi",
+  "name": "@yuumi/fullstack",
   "type": "module",
+  "version": "1.0.0",
   "private": true,
-  "module": "index.ts",
-  "workspaces": [
-    "packages/**"
-  ],
+  "description": "引用独立前端和后端的 Yuumi 联合模板",
   "scripts": {
-    "dev:server": "bun run --filter @yuumi/server dev",
-    "start:server:dev": "bun run --filter @yuumi/server start:dev",
-    "start:server:test": "bun run --filter @yuumi/server start:test",
-    "start:server:prod": "bun run --filter @yuumi/server start:prod",
-    "dev:web": "bun run --filter @yuumi/web dev",
-    "dev": "bun-tasks dev:server ::: dev:web"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "setup": "bun scripts/setup.ts",
+    "dev": "bun scripts/tasks.ts dev",
+    "dev:server": "bun run --cwd packages/server dev",
+    "dev:web": "bun run --cwd packages/web dev",
+    "generate:web": "bun scripts/tasks.ts generate",
+    "db:migrate": "bun run --cwd packages/server db:migrate",
+    "check": "bun run docs:check && bun scripts/tasks.ts check",
+    "docs:check": "bun scripts/check-docs.ts",
+    "build": "bun scripts/tasks.ts build",
+    "create": "bun scripts/create-project.ts",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^6.7.3",
-    "bun-tasks": "^0.1.2",
     "bun-types": "latest",
     "eslint": "^9.39.2",
     "eslint-plugin-format": "^1.1.0",
     "jiti": "^2.6.1",
-    "shadcn-vue": "^2.4.3"
+    "typescript": "^5.9.3"
   }
 }
