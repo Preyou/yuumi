@@ -7,7 +7,9 @@
 ```bash
 git clone --recurse-submodules git@github.com:Preyou/yuumi.git
 cd yuumi
-bun install
+bun run create -- ../my-app
+cd ../my-app
+bun install --frozen-lockfile
 bun run setup
 # 编辑 packages/server/.env.local，填写本项目的独立库名、Redis 逻辑库及凭据
 bun run db:migrate
@@ -23,10 +25,11 @@ setup 只创建缺失的 packages/server/.env.local。配置自己的 Logto Trad
 ```bash
 bun run check
 bun run build
-bun run create -- ../my-app
 ```
 
-`create` 从联合模板检出目录展开两个固定提交的受版本控制源码，并初始化新 Git 仓库。若子模块未初始化或提交不匹配，先运行 `git submodule update --init --recursive`。目标必须是新目录。创建后进入目标目录执行 `bun install` 和 `bun run setup`，再填写新的 `packages/server/.env.local`。
+`create` 从联合模板的当前 Git 提交及其中固定的前后端提交展开源码，并初始化新 Git 仓库。工作区和暂存区的修改不会进入项目。需要 Git、Bun 与系统 `tar`。若子模块未初始化或提交不匹配，先运行 `git submodule update --init --recursive`。目标必须是新目录。
+
+生成项目提交 `packages/web/env/.env` 和各仓库的 `bun.lock`。两端的 `.env.local` 用于本地配置。若只需运行模板本身，可在克隆目录直接执行冻结安装与 `setup`。
 
 后端接口变化且服务端配置齐备时，运行 `bun run generate:web` 导出 OpenAPI 并生成前端类型。只使用随模板提供的 OpenAPI 快照时，运行 `bun run --cwd packages/web generate`。
 
