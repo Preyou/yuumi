@@ -39,6 +39,18 @@ unset yuumi_account_password
 
 使用已有服务时，按 Server 环境说明填写后端配置，运行 `bun run db:migrate` 和 `bun run dev`，并在上述命令中改用 `bun run auth:user -- alice "Alice"`，将密码同样通过标准输入传入。
 
+## 同源代理与运行
+
+浏览器默认从应用入口请求 `/api`。`dev:local` 自动配置 Vite 的代理目标。`dev` 和 `dev:web` 默认将请求转发到 `http://127.0.0.1:3100`。如果后端单独运行或改了端口，设置 `API_ORIGIN` 指向该后端。只需要启动 Vite 时使用 `dev:web`。
+
+正式运行时，在前端主机安装 Caddy 2，执行 `bun run build` 后运行 `bun run start`，由联合模板启动已配置的 Server 和 Web。后端已在内网运行时，只启动 Web。公开站点和目标地址由部署环境提供。
+
+```sh
+WEB_SITE=app.example.com API_ORIGIN=http://backend.internal:3100 bun run start:web
+```
+
+后端 `APP_ORIGIN` 应与浏览器实际访问的应用地址一致。启用 Logto 时，在同一个应用地址上登记 `/api/auth/callback/logto` 和退出回跳。部署入口和代理细节见 [Web 模板说明](packages/web/README.md#后端代理)。
+
 ## 可选隔离开发环境
 
 需要自建隔离实例时，先为每个新项目配置唯一的 `COMPOSE_PROJECT_NAME`，再运行 `bun run infra:up`；同机多项目还要分别选择 `POSTGRES_PORT` 和 `REDIS_PORT`，避免复用同一组容器或端口。自带 Compose 的 PostgreSQL 为 `127.0.0.1:25432`（用户名/库名 `yuumi`），Redis 为 `127.0.0.1:26379`。在 `packages/server/.env.local` 显式填写对应连接串；PostgreSQL 密码取自 compose.yaml 的开发配置，Redis 逻辑库由本项目选择，然后运行迁移。不要直接将当前服务器示例当成 Compose 的连接地址。

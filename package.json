@@ -10,6 +10,8 @@
     "dev:local": "bun scripts/dev-local.ts",
     "dev:server": "bun run --cwd packages/server dev",
     "dev:web": "bun run --cwd packages/web dev",
+    "start": "bun scripts/tasks.ts start",
+    "start:web": "bun run --cwd packages/web start",
     "generate:web": "bun scripts/tasks.ts generate",
     "db:migrate": "bun run --cwd packages/server db:migrate",
     "auth:user": "bun run --cwd packages/server auth:user",

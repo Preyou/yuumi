@@ -22,8 +22,9 @@ async function run(name: string, command: string[]) {
   if (status !== 0) { throw new Error(`${name}: ${command.join(' ')} failed (${status})`) }
 }
 try {
-  if (task === 'dev') {
-    await Promise.race([run('server', ['bun', 'run', 'dev']), run('web', ['bun', 'run', 'dev'])])
+  if (task === 'dev' || task === 'start') {
+    const command = ['bun', '--no-orphans', 'run', task]
+    await Promise.race([run('server', command), run('web', command)])
   }
   else if (task === 'generate') {
     await run('server', ['bun', 'run', 'openapi:export', '--', resolve(root, 'packages/web/src/api/openapi.json')])
@@ -34,6 +35,6 @@ try {
     await run('web', ['bun', 'run', 'check'])
   }
   else if (task === 'build') { await run('web', ['bun', 'run', 'build']) }
-  else { throw new Error('Expected dev, generate, check or build') }
+  else { throw new Error('Expected dev, start, generate, check or build') }
 }
 finally { stop() }
