@@ -45,4 +45,4 @@ flowchart LR
 
 ## 联合开发配置
 
-dev:local 启动隔离的 PostgreSQL、Redis 和开发 OIDC，等待数据库、迁移和前端代理就绪。启动器统一决定端口和浏览器来源。项目使用独立 localhost 子域，避免并行项目共用浏览器会话。重跑保留本地身份和数据库。
+dev:local 启动隔离的 PostgreSQL 和 Redis，等待迁移和前端代理就绪。启动器继承服务端登录模式，使默认开发地址和已登记的 Logto 回调协调。自建账号由 Server 的公开命令创建。业务项目自己决定访问规则和账号数据。

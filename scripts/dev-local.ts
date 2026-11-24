@@ -1,18 +1,14 @@
+import type { LocalState, ServerLaunchEnv } from './local-config'
 import { link, readFile, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { startLocalOidc } from './local-oidc'
+import { apiPrefix, parseLocalState, parseServerLaunchEnv, serverDevelopmentEnv } from './local-config'
 
 const host = '127.0.0.1'
-const apiPrefix = '/api'
 const root = resolve(import.meta.dir, '..')
+const serverDirectory = resolve(root, 'packages/server')
 const statePath = resolve(root, 'dev.local')
 const controller = new AbortController()
-
-interface LocalState {
-  issuerPort: number
-  projectId: string
-}
 
 interface ComposeConfig {
   services?: {
@@ -24,13 +20,7 @@ interface ComposeConfig {
 
 async function readState(): Promise<LocalState | undefined> {
   try {
-    const state = JSON.parse(await readFile(statePath, 'utf8')) as Partial<LocalState> | null
-    if (!state?.projectId || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/.test(state.projectId)
-      || typeof state.issuerPort !== 'number' || !Number.isInteger(state.issuerPort)
-      || state.issuerPort < 1 || state.issuerPort > 65535) {
-      throw new Error('Invalid dev.local. Restore this project’s local development state from a known copy.')
-    }
-    return { issuerPort: state.issuerPort, projectId: state.projectId }
+    return parseLocalState(JSON.parse(await readFile(statePath, 'utf8')))
   }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error }
@@ -47,25 +37,27 @@ async function saveState(state: LocalState) {
   finally { await rm(staged, { force: true }) }
 }
 
-async function reservePort(exclude?: number) {
-  const reserve = () => Bun.serve({ fetch: () => new Response(null, { status: 503 }), hostname: host, port: 0 })
-  const first = reserve()
-  if (first.port !== exclude) { return first }
-  try { return reserve() }
-  finally { await first.stop(true) }
+function reservePort(port = 0) {
+  return Bun.serve({ fetch: () => new Response(null, { status: 503 }), hostname: host, port })
 }
 
-async function run(command: string[], cwd: string, env: typeof process.env, capture = false, cleanup = false) {
+interface RunOptions {
+  capture?: boolean
+  cleanup?: boolean
+  stdin?: 'ignore' | 'inherit'
+}
+
+async function run(command: string[], cwd: string, env: typeof process.env, options: RunOptions = {}) {
   const child = Bun.spawn(command, {
     cwd,
     env,
-    signal: cleanup ? undefined : controller.signal,
+    signal: options.cleanup ? undefined : controller.signal,
     stderr: 'inherit',
-    stdin: 'ignore',
-    stdout: capture ? 'pipe' : 'inherit',
+    stdin: options.stdin ?? 'ignore',
+    stdout: options.capture ? 'pipe' : 'inherit',
   })
   const [result, status] = await Promise.all([
-    capture ? new Response(child.stdout).text() : '',
+    options.capture ? new Response(child.stdout).text() : '',
     child.exited,
   ])
   if (status !== 0) { throw new Error(`${command.join(' ')} exited with status ${status}`) }
@@ -74,8 +66,12 @@ async function run(command: string[], cwd: string, env: typeof process.env, capt
 
 function composeCommand(project: string) {
   const env = { ...process.env, POSTGRES_PORT: '0', REDIS_PORT: '0' }
-  return (args: string[], capture = false, cleanup = false) =>
-    run(['docker', 'compose', '--project-name', project, '--file', resolve(root, 'compose.yaml'), ...args], root, env, capture, cleanup)
+  return (args: string[], options?: RunOptions) =>
+    run(['docker', 'compose', '--project-name', project, '--file', resolve(root, 'compose.yaml'), ...args], root, env, options)
+}
+
+function projectSuffix(projectId: string) {
+  return projectId.replaceAll('-', '').slice(0, 16)
 }
 
 async function ensureLocalDocker() {
@@ -88,7 +84,7 @@ async function ensureLocalDocker() {
     ...(context ? [context] : []),
     '--format',
     '{{.Endpoints.docker.Host}}',
-  ], root, process.env, true)
+  ], root, process.env, { capture: true })
   if (!endpoint.startsWith('unix:///')) {
     throw new Error('dev:local requires a local Docker context using a Unix socket.')
   }
@@ -116,6 +112,62 @@ function publishedPort(address: string, service: string) {
   return port
 }
 
+async function readLocalConnections(compose: ReturnType<typeof composeCommand>) {
+  const config = JSON.parse(await compose(['config', '--format', 'json'], { capture: true })) as ComposeConfig
+  const pg = config.services?.postgres?.environment
+  if (!pg?.POSTGRES_USER || !pg.POSTGRES_PASSWORD || !pg.POSTGRES_DB) {
+    throw new Error('compose.yaml must define local PostgreSQL credentials and database name.')
+  }
+  const [pgAddress, redisAddress] = await Promise.all([
+    compose(['port', 'postgres', '5432'], { capture: true }),
+    compose(['port', 'redis', '6379'], { capture: true }),
+  ])
+  const pgPort = publishedPort(pgAddress, 'postgres')
+  const redisPort = publishedPort(redisAddress, 'redis')
+  const databaseUrl = `postgresql://${encodeURIComponent(pg.POSTGRES_USER)}:${encodeURIComponent(pg.POSTGRES_PASSWORD)}@${host}:${pgPort}/${encodeURIComponent(pg.POSTGRES_DB)}`
+  return {
+    DATABASE_URL: databaseUrl,
+    MIGRATION_DATABASE_URL: databaseUrl,
+    REDIS_URL: `redis://${host}:${redisPort}/0`,
+  }
+}
+
+async function serverLaunchConfiguration() {
+  // Bun 在 Server 工作目录加载环境，auth:config 只输出本地编排需要的配置结果。
+  const values = await run(
+    [process.execPath, 'run', 'auth:config'],
+    serverDirectory,
+    { ...process.env, ...serverDevelopmentEnv },
+    { capture: true },
+  )
+  return parseServerLaunchEnv(JSON.parse(values) as ServerLaunchEnv)
+}
+
+async function provisionLocalUser(resolved: Awaited<ReturnType<typeof serverLaunchConfiguration>>) {
+  if (resolved.mode !== 'local') { throw new Error('Set AUTH_MODE=local in packages/server/.env.local to create a local user.') }
+  const state = await readState()
+  if (!state) { throw new Error('Start this project with bun run dev:local before creating a local user.') }
+  const suffix = projectSuffix(state.projectId)
+  const compose = composeCommand(`yuumi-local-${suffix}`)
+  const services = (await compose(['ps', '--status', 'running', '--services'], { capture: true })).split('\n')
+  if (!services.includes('postgres') || !services.includes('redis')) {
+    throw new Error('Start this project with bun run dev:local before creating a local user.')
+  }
+  const connections = await readLocalConnections(compose)
+  // 建号只用项目存储。此处的回环地址作为通用 Server 配置供命令初始化。
+  await run([process.execPath, 'run', 'auth:user', '--', ...Bun.argv.slice(3)], serverDirectory, {
+    ...process.env,
+    ...serverDevelopmentEnv,
+    ...connections,
+    API_PREFIX: apiPrefix,
+    APP_ORIGIN: `http://yuumi-${suffix}.localhost`,
+    AUTH_MODE: resolved.mode,
+    HOST: host,
+    OPENAPI_URL: '/openapi',
+    PORT: '3100',
+  }, { stdin: 'inherit' })
+}
+
 async function main() {
   if (process.platform === 'win32') { throw new Error('Run dev:local in WSL on Windows.') }
   if (!Bun.which('docker')) { throw new Error('dev:local requires Docker Compose.') }
@@ -128,22 +180,20 @@ async function main() {
   }
   await ensureLocalDocker()
 
+  const auth = await serverLaunchConfiguration()
+  if (Bun.argv[2] === 'auth:user') {
+    await provisionLocalUser(auth)
+    return
+  }
   const state = await readState()
   const projectId = state?.projectId ?? crypto.randomUUID()
-  const suffix = projectId.replaceAll('-', '').slice(0, 16)
+  const suffix = projectSuffix(projectId)
   const project = `yuumi-local-${suffix}`
   const compose = composeCommand(project)
-  const webReservation = await reservePort(state?.issuerPort)
-  const serverReservation = await reservePort(state?.issuerPort)
-  const webPort = webReservation.port!
-  const serverPort = serverReservation.port!
-  // Cookie 按主机而非端口隔离，并行项目使用不同主机名。
-  const appOrigin = `http://yuumi-${suffix}.localhost:${webPort}`
-  const callback = `${appOrigin}${apiPrefix}/auth/callback/logto`
-  const clientId = `yuumi-local-${suffix}`
-  const clientSecret = crypto.randomUUID()
   const children: { name: string, process: ReturnType<typeof Bun.spawn> }[] = []
-  let oidc: ReturnType<typeof startLocalOidc> | undefined
+  let webReservation: ReturnType<typeof reservePort> | undefined
+  let serverReservation: ReturnType<typeof reservePort> | undefined
+  let projectLock: ReturnType<typeof reservePort> | undefined
   let composeStarted = false
 
   function launch(name: typeof packages[number], env: typeof process.env) {
@@ -175,40 +225,41 @@ async function main() {
   }
 
   try {
-    try { oidc = startLocalOidc({ appOrigin, callback, clientId, clientSecret, port: state?.issuerPort ?? 0 }) }
+    if (state) {
+      try { projectLock = reservePort(state.lockPort) }
+      catch (error) {
+        throw new Error(`Cannot acquire this project’s local development lock on port ${state.lockPort}. Stop a running instance or free the port.`, { cause: error })
+      }
+    }
+    try { webReservation = reservePort(auth.registeredOrigin?.port) }
     catch (error) {
-      if (!state) { throw error }
-      throw new Error(`Cannot bind this project’s local OIDC port ${state.issuerPort}. Free the port to preserve existing users.`, { cause: error })
+      if (!auth.registeredOrigin) { throw error }
+      throw new Error(`Cannot bind the registered Logto app origin ${auth.registeredOrigin.origin}.`, { cause: error })
     }
-    if (!state) { await saveState({ issuerPort: oidc.port!, projectId }) }
-
-    const config = JSON.parse(await compose(['config', '--format', 'json'], true)) as ComposeConfig
-    const pg = config.services?.postgres?.environment
-    if (!pg?.POSTGRES_USER || !pg.POSTGRES_PASSWORD || !pg.POSTGRES_DB) {
-      throw new Error('compose.yaml must define local PostgreSQL credentials and database name.')
+    if (!projectLock) {
+      projectLock = reservePort()
+      await saveState({ lockPort: projectLock.port!, projectId })
     }
+    serverReservation = reservePort()
+    const webPort = webReservation.port!
+    const serverPort = serverReservation.port!
+    // 浏览器会话按主机隔离，已登记的 Logto origin 优先于临时地址。
+    const appOrigin = auth.registeredOrigin?.origin ?? `http://yuumi-${suffix}.localhost:${webPort}`
     composeStarted = true
     await compose(['up', '-d', '--wait', '--wait-timeout', '45'])
-    const pgPort = publishedPort(await compose(['port', 'postgres', '5432'], true), 'postgres')
-    const redisPort = publishedPort(await compose(['port', 'redis', '6379'], true), 'redis')
-    const databaseUrl = `postgresql://${encodeURIComponent(pg.POSTGRES_USER)}:${encodeURIComponent(pg.POSTGRES_PASSWORD)}@${host}:${pgPort}/${encodeURIComponent(pg.POSTGRES_DB)}`
+    const connections = await readLocalConnections(compose)
     const serverEnv = {
       ...process.env,
+      ...serverDevelopmentEnv,
+      ...connections,
       API_PREFIX: apiPrefix,
       APP_ORIGIN: appOrigin,
-      DATABASE_URL: databaseUrl,
+      AUTH_MODE: auth.mode,
       HOST: host,
-      LOGTO_API_RESOURCE: `${appOrigin}${apiPrefix}`,
-      LOGTO_APP_ID: clientId,
-      LOGTO_APP_SECRET: clientSecret,
-      LOGTO_ENDPOINT: oidc.url.origin,
-      MIGRATION_DATABASE_URL: databaseUrl,
-      NODE_ENV: 'development',
       OPENAPI_URL: '/openapi',
       PORT: String(serverPort),
-      REDIS_URL: `redis://${host}:${redisPort}/0`,
     }
-    await run([process.execPath, 'run', 'db:migrate'], resolve(root, 'packages/server'), serverEnv)
+    await run([process.execPath, 'run', 'db:migrate'], serverDirectory, serverEnv)
     controller.signal.throwIfAborted()
 
     await serverReservation.stop(true)
@@ -228,6 +279,9 @@ async function main() {
     }))
     await Promise.race([waitForProxy(webPort), exited])
     console.info(`Yuumi local is ready at ${appOrigin}`)
+    if (auth.mode === 'logto' && !auth.logtoConfigured) {
+      console.info('Logto login is pending configuration in packages/server/.env.local.')
+    }
     await Promise.race([
       exited,
       new Promise((resolve) => {
@@ -242,15 +296,15 @@ async function main() {
   finally {
     controller.abort()
     try {
-      await Promise.all([webReservation.stop(true), serverReservation.stop(true), stopApps()])
+      await Promise.all([webReservation?.stop(true), serverReservation?.stop(true), stopApps()])
     }
     finally {
       try {
-        if (composeStarted) { await compose(['stop', '--timeout', '5'], false, true) }
+        if (composeStarted) { await compose(['stop', '--timeout', '5'], { cleanup: true }) }
       }
       finally {
-        // 并发启动会争用项目签发者端口，最后释放它，避免停掉下一次启动的容器。
-        await oidc?.stop(true)
+        // 容器清理完成后释放锁，避免并发启动接管同一 Compose 项目。
+        await projectLock?.stop(true)
       }
     }
   }

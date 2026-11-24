@@ -14,9 +14,30 @@ bun run setup
 bun run dev:local
 ```
 
-`dev:local` 需要本地 Docker Compose（Unix 套接字）和支持 `.localhost` 子域的浏览器，可在 macOS、Linux 或 WSL 运行。在终端打开打印的地址，点击欢迎页的进入应用即可用本地身份登录。命令自动分配端口、准备持久化数据卷、迁移并确认前端代理可用。Ctrl+C 停止本项目进程和容器。保留生成的 `dev.local`，重新启动会沿用同一开发身份和数据。
+`dev:local` 需要本地 Docker Compose（Unix 套接字）和支持 `.localhost` 子域的浏览器，可在 macOS、Linux 或 WSL 运行。命令准备持久化数据卷，运行迁移并确认前端代理可用。终端打印实际访问地址。Ctrl+C 停止本项目进程和容器。保留生成的 `dev.local`，重新启动会沿用同一组数据卷。
 
-使用已有服务时，按 Server 环境说明填写 `packages/server/.env.local`，登记 Logto 回调，再运行 `bun run db:migrate` 和 `bun run dev`。默认回调为 `http://localhost:1282/api/auth/callback/logto`。setup 仅在缺失时复制配置示例。
+## 选择登录模式
+
+在 `packages/server/.env.local` 设置 `AUTH_MODE`，修改后重启。setup 在配置文件缺失时复制服务端示例，新项目默认关闭登录。
+
+| 模式    | 联合开发行为                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `off`   | 前端显示登录已关闭。需要身份的接口遵循项目的授权配置。                                                                                            |
+| `logto` | 托管登录使用 Server 的 `LOGTO_ENDPOINT`、`LOGTO_APP_ID`、`LOGTO_APP_SECRET` 和 `LOGTO_API_RESOURCE`。配置可以在建项时留空。登录入口会提示待配置。 |
+| `local` | 使用项目登录页和 Server 自建账号。在开发服务运行后创建第一个账号。                                                                                |
+
+`dev:local` 为关闭、自建和待配置 Logto 模式分配项目专属 `.localhost` 地址。配置完整的 Logto 使用 `APP_ORIGIN` 里登记的 HTTP 回环地址，例如 `http://my-app.localhost:1282`，省略端口时使用 80。在 Logto 登记该地址加上 `/api/auth/callback/logto`。端口占用时，释放它或更新配置及 Logto 登记。
+
+在运行 `dev:local` 的项目中，另开 Bash 终端输入密码并给当前 Compose 数据库创建账号。
+
+```bash
+read -rs -p "Password: " yuumi_account_password
+printf '\n'
+printf '%s\n' "$yuumi_account_password" | bun run auth:user:local -- alice "Alice"
+unset yuumi_account_password
+```
+
+使用已有服务时，按 Server 环境说明填写后端配置，运行 `bun run db:migrate` 和 `bun run dev`，并在上述命令中改用 `bun run auth:user -- alice "Alice"`，将密码同样通过标准输入传入。
 
 ## 可选隔离开发环境
 
