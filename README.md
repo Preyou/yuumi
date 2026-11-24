@@ -11,12 +11,12 @@ bun run create -- ../my-app
 cd ../my-app
 bun install --frozen-lockfile
 bun run setup
-# 编辑 packages/server/.env.local，填写本项目的独立库名、Redis 逻辑库及凭据
-bun run db:migrate
-bun run dev
+bun run dev:local
 ```
 
-setup 只创建缺失的 packages/server/.env.local。配置自己的 Logto Traditional Web 应用与 API Resource，回调为 http://localhost:1282/api/auth/callback/logto。Server 环境示例的注释记录当前服务器地址，连接串、库名和密钥默认留空。先准备本项目独立数据库并填写配置，setup 不会覆盖已有 .env.local，也不会创建数据库。Web 固定 localhost:1282，Server localhost:3100，浏览器通过同源 /api 访问。
+`dev:local` 需要本地 Docker Compose（Unix 套接字）和支持 `.localhost` 子域的浏览器，可在 macOS、Linux 或 WSL 运行。在终端打开打印的地址，点击欢迎页的进入应用即可用本地身份登录。命令自动分配端口、准备持久化数据卷、迁移并确认前端代理可用。Ctrl+C 停止本项目进程和容器。保留生成的 `dev.local`，重新启动会沿用同一开发身份和数据。
+
+使用已有服务时，按 Server 环境说明填写 `packages/server/.env.local`，登记 Logto 回调，再运行 `bun run db:migrate` 和 `bun run dev`。默认回调为 `http://localhost:1282/api/auth/callback/logto`。setup 仅在缺失时复制配置示例。
 
 ## 可选隔离开发环境
 
